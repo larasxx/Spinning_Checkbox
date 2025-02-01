@@ -9,16 +9,13 @@
   flex-direction: column;
 }
 
-/* Make the checkbox 3 times bigger */
+/* Make the checkbox 3 times larger */
 input[type="checkbox"].big {
-  /* The transform scales it up 3× */
   transform: scale(3);
   margin: 20px;
-  /* To help with centering, remove the default accent if needed */
 }
 
-/* Spin animation: When the checkbox is checked (and in active phases) it spins. 
-   Note: We include the scale factor in the keyframes so the element remains big. */
+/* Spin animation: When the checkbox is checked (and in active phases) it spins */
 .spin {
   animation: spin 1s linear infinite;
   transform-origin: center;
@@ -39,10 +36,9 @@ input[type="checkbox"].big {
   cursor: not-allowed;
 }
 
-/* Ghost style: show a ghost emoji that fades out over 1 second.
-   We use a keyframe animation for fading. */
+/* Ghost style: Increase ghost size to be 3 times larger than before (e.g. from 3em to 9em) */
 .ghost {
-  font-size: 3em;
+  font-size: 9em;
   opacity: 1;
   animation: ghostFade 1s forwards;
 }

@@ -1,118 +1,147 @@
-import React, { useState, useEffect } from "react";
+import React, { useReducer, useEffect } from "react";
 import "./App.css";
 
-function App() {
-  // phase can be:
-  // "normal"       – initial active mode
-  // "disabled1"    – frozen for 5 seconds after 3 toggle cycles in normal mode
-  // "oneToggle"    – active for ONE full toggle cycle (check then uncheck)
-  // "disabled2"    – frozen for 10 seconds after the oneToggle cycle
-  // "ghostTrigger" – active waiting for a click to transform into a ghost
-  // "ghost"        – shows ghost emoticon with fade-out animation (1s)
-  // "hidden"       – ghost has faded; the element is hidden for 5s
-  // "greyed"       – reappears greyed out and unclickable
-  const [phase, setPhase] = useState("normal");
-  const [isChecked, setIsChecked] = useState(false);
-  const [pressCount, setPressCount] = useState(0);
+const initialState = {
+  phase: "normal", // possible phases: normal, disabled1, oneToggle, disabled2, ghostTrigger, ghost, hidden, greyed
+  isChecked: false,
+  pressCount: 0,
+};
 
-  // Handle changes (clicks) on the checkbox.
+function reducer(state, action) {
+  switch (action.type) {
+    case "TOGGLE":
+      // Only respond to toggle events when allowed
+      if (state.phase === "normal") {
+        // If already checked and the new value is false, it’s a full cycle
+        if (state.isChecked && !action.payload) {
+          const newPressCount = state.pressCount + 1;
+          // After 3 cycles, disable for 5 seconds
+          if (newPressCount >= 3) {
+            return {
+              ...state,
+              isChecked: false,
+              pressCount: newPressCount,
+              phase: "disabled1",
+            };
+          } else {
+            return { ...state, isChecked: false, pressCount: newPressCount };
+          }
+        } else {
+          return { ...state, isChecked: action.payload };
+        }
+      } else if (state.phase === "oneToggle") {
+        if (state.isChecked && !action.payload) {
+          // Allow one full cycle then disable for 3 seconds (changed from 10 sec to 3 sec)
+          return { ...state, isChecked: false, phase: "disabled2" };
+        } else {
+          return { ...state, isChecked: action.payload };
+        }
+      } else if (state.phase === "ghostTrigger") {
+        // In ghostTrigger phase, any click triggers the ghost transformation
+        return { ...state, phase: "ghost" };
+      }
+      return state;
+    case "TIMER":
+      // Handle timer-driven phase transitions
+      if (state.phase === "disabled1" && action.timerPhase === "disabled1") {
+        return { ...state, phase: "oneToggle", pressCount: 0 };
+      } else if (
+        state.phase === "disabled2" &&
+        action.timerPhase === "disabled2"
+      ) {
+        return { ...state, phase: "ghostTrigger" };
+      } else if (state.phase === "ghost" && action.timerPhase === "ghost") {
+        return { ...state, phase: "hidden" };
+      } else if (state.phase === "hidden" && action.timerPhase === "hidden") {
+        return { ...state, phase: "restart" };
+      }
+      return state;
+    case "RESTART":
+      return initialState;
+    default:
+      return state;
+  }
+}
+
+function App() {
+  const [state, dispatch] = useReducer(reducer, initialState);
+
+  // Event handler for checkbox changes
   const handleChange = (e) => {
     const newValue = e.target.checked;
-
-    if (phase === "normal") {
-      // In normal mode, every full toggle (from checked → unchecked) counts.
-      if (isChecked && !newValue) {
-        setPressCount((prev) => {
-          const newCount = prev + 1;
-          // After 3 full cycles, move into a disabled phase.
-          if (newCount >= 3) {
-            setPhase("disabled1");
-          }
-          return newCount;
-        });
-      }
-      setIsChecked(newValue);
-    } else if (phase === "oneToggle") {
-      // In oneToggle mode allow exactly one full cycle.
-      if (isChecked && !newValue) {
-        setIsChecked(newValue);
-        setPhase("disabled2");
-      } else {
-        setIsChecked(newValue);
-      }
-    } else if (phase === "ghostTrigger") {
-      // In ghostTrigger mode, any click turns the checkbox into a ghost.
-      setPhase("ghost");
-    }
-    // In disabled or later phases, do nothing.
+    dispatch({ type: "TOGGLE", payload: newValue });
   };
 
-  // Timer effects that automatically change phases.
+  // useEffect for scheduling timers when entering timer-driven phases
   useEffect(() => {
     let timer;
-    if (phase === "disabled1") {
-      // After 3 cycles, the checkbox is disabled for 5 seconds.
-      setIsChecked(false); // ensure it is unchecked
+    if (state.phase === "disabled1") {
       timer = setTimeout(() => {
-        setPhase("oneToggle");
+        dispatch({ type: "TIMER", timerPhase: "disabled1" });
       }, 5000);
-    } else if (phase === "disabled2") {
-      // After the one-toggle cycle, disable for 10 seconds.
-      setIsChecked(false);
+    } else if (state.phase === "disabled2") {
       timer = setTimeout(() => {
-        setPhase("ghostTrigger");
-      }, 10000);
-    } else if (phase === "ghost") {
-      // When in ghost mode, after 1 second (and while a CSS fade is playing) transition.
+        dispatch({ type: "TIMER", timerPhase: "disabled2" });
+      }, 3000); // changed from 10s to 3s
+    } else if (state.phase === "ghost") {
       timer = setTimeout(() => {
-        setPhase("hidden");
+        dispatch({ type: "TIMER", timerPhase: "ghost" });
       }, 1000);
-    } else if (phase === "hidden") {
-      // Keep the ghost hidden for 5 seconds.
+    } else if (state.phase === "hidden") {
       timer = setTimeout(() => {
-        setPhase("greyed");
+        dispatch({ type: "TIMER", timerPhase: "hidden" });
       }, 5000);
     }
     return () => clearTimeout(timer);
-  }, [phase]);
+  }, [state.phase]);
 
-  // Determine if the checkbox should be disabled.
+  // Determine if the checkbox should be disabled
   const inputDisabled =
-    phase === "disabled1" || phase === "disabled2" || phase === "greyed";
+    state.phase === "disabled1" ||
+    state.phase === "disabled2" ||
+    state.phase === "greyed";
+
+  const restart = () => {
+    dispatch({ type: "RESTART" });
+  };
 
   // Build the className for the checkbox:
-  // - Always add "big" (3× size).
-  // - When checked in active phases, add "spin" for the spinning animation.
-  // - When in greyed phase, add "greyed" styling.
+  // - "big" makes it 3× larger.
+  // - "spin" adds the spin animation when the checkbox is checked.
+  // - "greyed" applies styling for the final unresponsive phase.
   let checkboxClass = "big";
   if (
-    (phase === "normal" ||
-      phase === "oneToggle" ||
-      phase === "ghostTrigger" ||
-      phase === "disabled1" ||
-      phase === "disabled2") &&
-    isChecked
+    (state.phase === "normal" ||
+      state.phase === "oneToggle" ||
+      state.phase === "ghostTrigger" ||
+      state.phase === "disabled1" ||
+      state.phase === "disabled2") &&
+    state.isChecked
   ) {
     checkboxClass += " spin";
   }
-  if (phase === "greyed") {
+  if (state.phase === "greyed") {
     checkboxClass += " greyed";
   }
 
   return (
     <div className="App">
-      {phase === "ghost" ? (
-        // Render ghost emoticon. Its CSS animation (see App.css) fades it out.
+      {state.phase === "ghost" ? (
+        // Render the ghost emoji
         <div className="ghost">👻</div>
-      ) : phase === "hidden" ? (
-        // While hidden, render an empty placeholder (or nothing).
+      ) : state.phase === "hidden" ? (
+        // Render an empty placeholder when hidden
         <div style={{ height: "60px" }}></div>
+      ) : state.phase === "restart" ? (
+        <div>
+          <button onClick={restart}>Restart</button>
+        </div>
       ) : (
-        // In all other phases, render the checkbox input.
+        // Otherwise, render the checkbox input
         <input
           type="checkbox"
           className={checkboxClass}
-          checked={isChecked}
+          checked={state.isChecked}
           onChange={handleChange}
           disabled={inputDisabled}
         />
